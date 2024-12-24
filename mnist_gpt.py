@@ -151,18 +151,31 @@ class GPT(nn.Module):
 
     def generate(self, target, top_k=None, return_loss_matrix=False):
         idx = torch.tensor([target + 256])[None, :] #(1, seq_len)
+
         device = next(self.parameters()).device
+
         idx = idx.to(device)
+        loss = torch.tensor([0]).view(1,-1)
+        loss = loss.to(device)
 
         while idx.size(1) < self.config.block_size:
-            print(idx.size(1))
-            
-            logits = self.forward(idx) # (1, vocab_size)
 
-            logits = torch.softmax(logits, dim=-1)
+            with torch.no_grad():
+                logits = self.forward(idx) # (1, vocab_size)
 
-            print(logits.size())
-            next_idx = torch.multinomial(logits, num_samples=1) #(1, 1)
-            idx = torch.cat([idx, next_idx], dim=-1) # (1, seq_len + 1)
-        
-        return idx.cpu()
+                probs = torch.softmax(logits, dim=-1) # (1, vocab_size)
+
+                next_idx = torch.multinomial(probs, num_samples=1)#(1, 1)
+                idx = torch.cat([idx, next_idx], dim=-1) # (1, seq_len + 1)
+
+                next_idx = next_idx.view(-1)
+
+
+                curr_loss = F.cross_entropy(logits, next_idx) # (1,1)
+
+                curr_loss = torch.tensor(curr_loss).view(1,1)
+
+                loss = torch.cat([loss, curr_loss], dim=-1) # (1, seq_len+1)
+
+        # both idx and curr_loss should have the same shape at this point
+        return idx.cpu(), loss.cpu() # repeatedly yields the generated digit
