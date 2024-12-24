@@ -16,8 +16,7 @@ This repository demonstrates an autoregressive GPT model trained on the MNIST da
 
 
 
-
-And here are the corresponding GIFs of all the digits being generated:
+And here are GIFs of all the digits being generated:
 
 <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
     <img src="./generations/gifs/0.gif" alt="GIF 0" style="width: 170px;">
@@ -54,18 +53,16 @@ python run.py \
 - `--generate_gifs`: If set, also generate pixel-by-pixel GIFs for each digit. Defaults to off.
 
 
-
-
 ## Descriptions of Files
+
+- **`run.py`**  
+  Command-line script that loads the trained GPT model (`trained_model_state_dict.pt`), accepts command-line arguments, generates digits, and saves outputs (PNGs and optionally GIFs).
 
 - **`mnist_gpt.py`**  
   This file defines the `GPT` model architecture specialized for MNIST pixel (token) generation.
 
 - **`mnist_gpt_train.ipynb`**  
   Jupyter notebook used to train the GPT model on MNIST data.
-
-- **`run.py`**  
-  Command-line script that loads the trained GPT model (`trained_model_state_dict.pt`), accepts command-line arguments, generates digits, and saves outputs (PNGs and optionally GIFs).
 
 - **`trained_model_state_dict.pt`**  
   The PyTorch state dictionary for the pre-trained GPT.
