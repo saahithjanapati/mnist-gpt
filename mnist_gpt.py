@@ -54,9 +54,7 @@ class CausalSelfAttention(nn.Module):
         v = v.view(B, T, self.n_head, -1).transpose(1, 2) # (B, n_h, T, h_dim)
 
         att_scores = (q @ k.transpose(2, 3)) / math.sqrt(h_dim) # (B, n_h, T, h_dim) x (B, n_h, h_dim, T) --> (B, n_h, T, T)
-        att_scores.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
-
-        # att_scores = att_scores.masked_fill(self.bias[None, None, :T, :T] == 0, float('-inf'))
+        att_scores = att_scores.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
 
         att_scores = F.softmax(att_scores, dim=-1)
         att_scores = self.attn_dropout(att_scores) # (B, n_h, T, T)
@@ -149,33 +147,66 @@ class GPT(nn.Module):
         return logits 
     
 
-    def generate(self, target, top_k=None, return_loss_matrix=False):
-        idx = torch.tensor([target + 256])[None, :] #(1, seq_len)
-
+    def generate(self, targets, temperature = 1.0, top_k=None, top_p=None):
+        idx = torch.tensor([[target + 256] for target in targets])
         device = next(self.parameters()).device
 
         idx = idx.to(device)
-        loss = torch.tensor([0]).view(1,-1)
-        loss = loss.to(device)
 
         while idx.size(1) < self.config.block_size:
 
             with torch.no_grad():
                 logits = self.forward(idx) # (1, vocab_size)
-
+                
+                # apply temperature scaling
+                assert temperature >= 0, "temperature must be non-negative value"
+                
+                if temperature > 0:
+                    logits /= temperature
+                
+                elif temperature == 0:
+                    max_values, max_indices = torch.max(logits, dim=-1)
+                    
+                    new_logits = torch.ones_like(logits) * float('-inf')
+                    new_logits[torch.arange(logits.size(0)), max_indices] = max_values
+                    logits = new_logits
+                
+                
+                # apply sampling strategy (if specified)
                 probs = torch.softmax(logits, dim=-1) # (1, vocab_size)
+                assert not (top_k is not None and top_p is not None), "You must choose either top_p or top_k sampling (or neither)"
+                
+                if top_k is not None:
+                    top_k_values, top_k_indices = torch.topk(probs, k=top_k, dim=-1)
+                    threshold = top_k_values[:, -1] # (B,)
+                    probs[torch.where(probs < threshold[:, None])] = 0 # mask out the logits that aren't contributing
+                    
+                    # renormalize probabilities
+                    probs = probs / probs.sum(dim=-1, keepdim=True)
+                    next_idx = torch.multinomial(probs, num_samples=1)
 
-                next_idx = torch.multinomial(probs, num_samples=1)#(1, 1)
+
+                elif top_p is not None:
+                    # sort the probabilities (in descending order!!!)
+                    sorted_probs, sorted_indices = torch.sort(probs, dim=-1, descending=True)
+                    
+                    # find the cumsum
+                    cumsum = torch.cumsum(sorted_probs, dim=-1)
+                    mask = cumsum <= top_p
+                    mask[:, 0] = True # doing this to make sure we have at least one token
+                    
+                    sorted_probs[~mask] = 0.0
+                    sorted_probs = sorted_probs / sorted_probs.sum(dim=-1, keepdim=True)
+
+                    next_intermediate_idx = torch.multinomial(sorted_probs, num_samples=1) # (B, 1)
+                    next_idx = torch.gather(sorted_indices, 1, next_intermediate_idx)
+                    
+                
+                else:
+                    next_idx = torch.multinomial(probs, num_samples=1)#(1, 1) (just regular random sampling)
+                
+
                 idx = torch.cat([idx, next_idx], dim=-1) # (1, seq_len + 1)
-
                 next_idx = next_idx.view(-1)
 
-
-                curr_loss = F.cross_entropy(logits, next_idx) # (1,1)
-
-                curr_loss = torch.tensor(curr_loss).view(1,1)
-
-                loss = torch.cat([loss, curr_loss], dim=-1) # (1, seq_len+1)
-
-        # both idx and curr_loss should have the same shape at this point
-        return idx.cpu(), loss.cpu() # repeatedly yields the generated digit
+        return idx.cpu()
