@@ -34,6 +34,9 @@ And here are GIFs of all the digits being generated:
 ---
 ## Usage
 
+First make sure you have the necessary dependencies (PyTorch, Matplotlib, and PIL) installed. You can run `pip install -r requirements.txt`.
+
+
 You can generate images from the command line using the `run.py` script. For example:
 
 ```bash
